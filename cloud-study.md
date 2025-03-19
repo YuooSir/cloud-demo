@@ -329,6 +329,170 @@ spring:
    }
    ```
 
+5.  第三方API接口
+
+   ```java
+   // 远程调用第三方接口时，value任意（不能和现有重复）,url需要正确填写
+   // https://jsonplaceholder.typicode.com/posts
+   // url：https://jsonplaceholder.typicode.com
+   // 参数：/posts
+   @FeignClient(value = "another-blog-service", url = "https://jsonplaceholder.typicode.com")
+   public interface AnotherFeignClient {
+   
+     @GetMapping("/posts")
+     String getBlogList(@RequestHeader("Authorization") String auth,
+         @RequestParam("token") String token, @RequestParam("page") int page);
+   }
+   ```
+
+### 开启日志
+
+1. 修改application.yml
+
+   ```yml
+   logging:
+     level:
+       com.zero.order.feign : debug
+   ```
+
+2. 修改配置类
+
+   ```java
+   import feign.Logger;
+   import org.springframework.context.annotation.Bean;
+   import org.springframework.context.annotation.Configuration;
+   
+   @Configuration
+   public class OrderConfig {
+   
+     // 开启Feign日志
+     @Bean
+     Logger.Level getLevel() {
+       return Logger.Level.FULL;
+     }
+   }
+   ```
+
+### 超时配置
+
+1. 修改application.yml文件
+
+   ```yml
+   # openfeign 配置
+   feign:
+     client:
+       config:
+         # 默认配置
+         default:
+           logger-level: full
+           connect-timeout: 2000
+           read-timeout: 2000
+         # 指定feign客户端配置
+         product-service:
+           logger-level: full
+           connect-timeout: 5000
+           read-timeout: 5000
+   ```
+
    
 
-5. 
+### 重试机制
+
+1. 修改配置类
+
+   ```java
+   // 开启Feign重试机制
+   @Bean
+   Retryer getRetryer() {
+   	return new Retryer.Default();
+   }
+   ```
+
+   
+
+### 拦截器
+
+#### 请求拦截器
+
+- 作用
+
+  - 给远程服务发送请求前，对请求进行拦截，可在此做一些修改，比如修改请求头等..
+
+  ```java
+  @Component
+  public class XTokenRequestInterceptor implements RequestInterceptor {
+  
+    /**
+     * 请求拦截器
+     * @param template 请求模板
+     */
+    @Override
+    public void apply(RequestTemplate template) {
+      System.out.println("请求拦截器拦截到请求");
+      template.header("X-Token", "123456");
+    }
+  }
+  ```
+
+  
+
+#### 响应拦截器
+
+- 作用
+  - 对远程服务的响应数据进行修改
+
+
+
+### 兜底返回
+
+1. 实现FeignClient接口
+
+   ```java
+   @Component
+   public class ProductFeignClientFallback implements ProductFeignClient {
+   
+     @Override
+     public Product getProduct(int productId) {
+       Product product = new Product();
+       product.setProductId(productId);
+       product.setName("未知商品");
+       product.setPrice(0);
+       return product;
+     }
+   
+   }
+   ```
+
+2. 将接口实现类设置为fallback
+
+   ```java
+   @FeignClient(value = "product-service", fallback = ProductFeignClientFallback.class)
+   public interface ProductFeignClient {
+   
+     // 此时GetMapping表示发起GET请求
+     @GetMapping("/product/{productId}")
+     Product getProduct(@PathVariable int productId);
+   
+   }
+   ```
+
+3. 引入Sentinel依赖
+
+   ```xml
+   <dependency>
+     <groupId>com.alibaba.cloud</groupId>
+     <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+   </dependency>
+   ```
+
+4. 修改application.yml，开启熔断
+
+   ```yml
+   # openfeign 配置
+   feign:
+     # 开启服务熔断
+     sentinel:
+       enabled: true
+   ```
+
+   

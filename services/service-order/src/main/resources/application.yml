@@ -16,10 +16,29 @@ spring:
           enabled: false
         # 指定命名空间。默认使用public
         namespace: ${spring.profiles.active:public}
+
+# openfeign 配置
+feign:
+  client:
+    config:
+      # 默认配置
+      default:
+        logger-level: full
+        connect-timeout: 2000
+        read-timeout: 2000
+      # 指定feign客户端配置
+      product-service:
+        logger-level: full
+        connect-timeout: 5000
+        read-timeout: 5000
+  # 开启服务熔断
+  sentinel:
+    enabled: true
+
 logging:
   level:
     root: info
-
+    com.zero.order.feign : debug
 ---
 spring:
   config:
