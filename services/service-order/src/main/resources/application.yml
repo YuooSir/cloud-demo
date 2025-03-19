@@ -4,9 +4,47 @@ server:
 spring:
   application:
     name: order-service
+  # 指定当前环境
+  profiles:
+    active: prod
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+      config:
+        # 关闭配置中心检查
+        import-check:
+          enabled: false
+        # 指定命名空间。默认使用public
+        namespace: ${spring.profiles.active:public}
 logging:
   level:
     root: info
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yml?group=order
+      - nacos:db.yml?group=order
+    activate:
+      on-profile: dev
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yml?group=order
+      - nacos:db.yml?group=order
+      - nacos:test.yml?group=order
+    activate:
+      on-profile: test
+
+---
+spring:
+  config:
+    import:
+      - nacos:common.yml?group=order
+      - nacos:db.yml?group=order
+      - nacos:prod.yml?group=order
+    activate:
+      on-profile: prod

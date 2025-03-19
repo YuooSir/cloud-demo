@@ -7,6 +7,10 @@ spring:
   cloud:
     nacos:
       server-addr: 127.0.0.1:8848
+      #  关闭配置中心检查
+      config:
+        import-check:
+          enabled: false
 logging:
   level:
     root: info
