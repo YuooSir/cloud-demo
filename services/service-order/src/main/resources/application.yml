@@ -16,6 +16,13 @@ spring:
           enabled: false
         # 指定命名空间。默认使用public
         namespace: ${spring.profiles.active:public}
+    sentinel:
+      transport:
+        # sentinel 控制台
+        dashboard: localhost:8080
+      # 开启提前加载
+      eager: true
+      web-context-unify: false
 
 # openfeign 配置
 feign:

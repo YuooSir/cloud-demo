@@ -496,3 +496,325 @@ spring:
    ```
 
    
+
+## Sentinel
+
+1. 引入Sentinel依赖
+
+   ```xml
+   <dependency>
+     <groupId>com.alibaba.cloud</groupId>
+     <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+   </dependency>
+   ```
+
+2. 修改application.yml文件
+
+   ```yml
+   spring:
+     cloud:
+       sentinel:
+         transport:
+           # sentinel 控制台
+           dashboard: localhost:8080
+         # 开启提前加载
+         eager: true
+   ```
+
+### 异常处理
+
+#### Web接口异常
+
+```java
+/**
+ * Web接口被Sentinel限制后的自定义异常处理
+ */
+@Component
+public class MyBlockException implements BlockExceptionHandler {
+
+  @Override
+  public void handle(HttpServletRequest request, HttpServletResponse response, BlockException e)
+      throws Exception {
+    ObjectMapper objectMapper = new ObjectMapper();
+    objectMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+    response.setContentType("application/json;charset=UTF-8");
+    PrintWriter writer = response.getWriter();
+    R.error(500, e.getMessage());
+    writer.write(objectMapper.writeValueAsString(R.error(500, "违反Sentinel的流控规则，禁止访问")));
+    writer.flush();
+    writer.close();
+  }
+}
+```
+
+#### @SentinelResource修饰的方法发生流控异常
+
+```java
+@Service
+@Slf4j
+public class OrderServiceImpl implements OrderService {
+
+  @Autowired
+  ProductFeignClient productFeignClient;
+
+  // 使用 blockHandler 标注降级处理方法
+  @SentinelResource(value = "createOrder", blockHandler = "createOrderFallback")
+  @Override
+  public Order createOrder(int customerId, int productId, int quantity) {
+      // ......
+  }
+
+  /**
+   * 降级处理方法
+   */
+  public Order createOrderFallback(int customerId, int productId, int quantity, BlockException e) {
+     // ......
+  }
+
+}
+```
+
+**若不需要降级处理，则使用全局异常处理类进行处理**
+
+
+
+#### OpenFeign调用发生流控异常
+
+此时首先会调用该方法的降级处理方法，如果没有进行降级处理，则需要使用全局异常处理类进行处理
+
+
+
+#### Sphu.xxx() 出现流控异常
+
+手动使用 try.. catch 解决
+
+
+
+### 流控规则
+
+#### 阈值类型
+
+1. **QPS（Queries Per Second）**：
+   - 控制每秒的请求数量。
+   - 适用于限制接口或资源的请求频率。
+2. **线程数**：
+   - 控制并发线程数。
+   - 适用于限制同时处理请求的线程数量，防止资源耗尽。
+
+#### 均摊阈值
+
+是指将总阈值均匀分摊到每个小周期中，从而实现更平滑的流量控制
+
+#### 集群阈值模式
+
+- 情况A：
+
+  - 阈值类型：QPS
+  - 均摊阈值：5
+  - 集群阈值模式：单机均摊
+  - 集群内主机数量：3个，且所有主机都包含当前被限制的簇点链路。
+
+- 解释：
+
+  - 每个主机的 QPS 限制为 5，即每秒最多处理 5 个请求。
+
+  - 由于是单机均摊模式，集群中的每个主机独立计算 QPS，互不影响。
+
+  - 如果某个主机的 QPS 超过 5，Sentinel 会对该主机的请求进行限流，而其他主机不受影响。
+
+    
+
+- 情况B：
+
+  - 阈值类型：QPS
+  - 均摊阈值：10
+  - 集群阈值模式：总体阈值
+  - 集群内主机数量：3个，且所有主机都包含当前被限制的簇点链路。
+
+- 解释：
+
+  - 整个集群的 QPS 限制为 10，即集群中所有主机每秒处理的请求总数不能超过 10。
+  - 由于是总体阈值模式，集群中的主机共享 QPS 限制，所有主机的请求量会累加计算。
+  - 如果集群的 QPS 超过 10，Sentinel 会对集群中的请求进行限流。
+
+#### 流控模式
+
+1. 直接模式
+
+   - 定义：直接对某个资源（如接口、方法等）进行流量限制。
+   - 特点：
+     - 独立限制：只针对当前资源的流量进行控制，与其他资源无关。
+     - 简单直接：适用于单个资源的流量控制。
+   - 示例：
+     - 设置某个接口的 QPS 阈值为 10，超过 10 的请求会被限流。
+     - 例如：`/api/user` 接口的 QPS 限制为 10，超过 10 的请求会被拒绝。
+
+2. 关联模式
+
+   - 定义：根据某个关联资源的流量状态，对当前资源进行流量限制。
+
+   - 特点：
+
+     - 关联控制：当前资源的流量限制依赖于另一个关联资源的流量状态。
+     - 优先级：当关联资源的流量达到阈值时，才会对当前资源进行限流。
+
+   - 示例：
+
+     - 设置资源 A 的 QPS 阈值为 10，并关联资源 B。
+     - 当资源 B 的 QPS 超过 10 时，资源 A 会被限流，即使资源 A 本身的流量未达到阈值。
+
+   - 注意点：
+
+     - 需要修改application.yml文件
+
+       ```yml
+       spring:
+         cloud:
+           sentinel:
+             # 控制 Sentinel 是否统一处理 Web 请求的上下文
+             web-context-unify: false
+       ```
+
+3. 链路模式
+
+   - 定义：根据某个调用链路（入口资源）的流量状态，对当前资源进行流量限制。
+   - 特点：
+     - 链路控制：只对通过特定入口资源调用当前资源的流量进行限制。
+     - 入口资源：需要指定一个入口资源（Entry Resource），只有通过该入口调用的流量才会被统计和限制。
+   - 示例：
+     - 设置资源 A 的 QPS 阈值为 10，并指定入口资源为 `/api/entry`。
+     - 只有当通过 `/api/entry` 调用资源 A 的流量超过 10 时，才会对资源 A 进行限流。
+     - 通过其他入口调用资源 A 的流量不会被统计和限制。
+
+#### 流控效果
+
+1. 快速失败（快速拒绝）
+   - 定义：当流量超过阈值时，立即拒绝请求，并抛出 `FlowException` 异常。
+   - 特点：
+     - 简单直接：无需等待，直接拒绝请求。
+     - 适合突发流量：能够快速保护系统，避免过载。
+   - 实现原理：
+     - 当 QPS 或并发数超过阈值时，直接拒绝请求，返回错误信息。
+   - 示例：
+     - 设置 QPS 阈值为 10，当每秒请求数超过 10 时，直接拒绝后续请求。
+2. Warm Up（预热）
+   - 定义：当流量超过阈值时，允许请求通过，但会逐步增加允许的流量，直到达到设定的阈值。
+   - 特点：
+     - 平滑过渡：避免系统在冷启动时被突发流量打垮。
+     - 适合冷启动场景：例如系统刚启动时，资源尚未完全初始化，需要逐步增加流量。
+   - 实现原理：
+     - Sentinel 使用令牌桶算法，在预热时间内逐步增加允许的流量。
+     - 预热时间内，实际允许的 QPS 会从较低值逐步增加到设定的阈值。
+   - 示例：
+     - 设置 QPS 阈值为 100，预热时间为 10 秒。
+     - 在 10 秒内，允许的 QPS 会从 50 逐步增加到 100。
+3. 排队等待
+   - 定义：当流量超过阈值时，请求不会被立即拒绝，而是进入队列等待，直到超时或通过。
+   - 特点：
+     - 请求排队：通过排队的方式，尽量让请求通过，而不是直接拒绝。
+     - 适合流量波动场景：能够在一定程度上缓解突发流量。
+   - 实现原理：
+     - Sentinel 使用漏桶算法，将请求放入队列中，按照固定的速率处理请求。
+     - 如果请求在队列中等待超时，则会被拒绝。
+   - 示例：
+     - 设置 QPS 阈值为 10，超时时间为 500ms。
+     - 当每秒请求数超过 10 时，请求会进入队列等待，最多等待 500ms。
+     - 如果 500ms 内请求仍未通过，则会被拒绝。
+
+#### 熔断降级
+
+![image-20250319154802614](assets/image-20250319154802614.png)
+
+1. 慢调用比例
+   - 定义：当资源的慢调用比例（即响应时间超过设定阈值的请求比例）超过设定的阈值时，触发熔断。
+   - 特点：
+     - 基于响应时间：关注请求的响应时间是否过长。
+     - 适合性能敏感场景：用于保护系统免受慢调用的影响。
+   - 参数：
+     - 慢调用比例阈值：例如 0.5，表示慢调用比例超过 50% 时触发熔断。
+     - 最大 RT（响应时间）：例如 500ms，表示响应时间超过 500ms 的请求被视为慢调用。
+     - 统计时长：例如 10s，表示统计最近 10 秒内的请求。
+     - 最小请求数：例如 5，表示在统计时长内至少需要 5 个请求才触发熔断。
+     - 熔断时长：例如 5s，表示熔断持续 5 秒，之后进入半开状态。
+   - 示例：
+     - 设置最大 RT 为 500ms，慢调用比例阈值为 0.5，统计时长为 10s，最小请求数为 5，熔断时长为 5s。
+     - 如果最近 10 秒内有 5 个请求，且其中 3 个请求的响应时间超过 500ms（慢调用比例为 60%），则触发熔断。
+2. 异常比例
+   - 定义：当资源的异常比例（即请求抛出异常的比例）超过设定的阈值时，触发熔断。
+   - 特点：
+     - 基于异常数：关注请求是否抛出异常。
+     - 适合异常敏感场景：用于保护系统免受异常请求的影响。
+   - 参数：
+     - 异常比例阈值：例如 0.5，表示异常比例超过 50% 时触发熔断。
+     - 统计时长：例如 10s，表示统计最近 10 秒内的请求。
+     - 最小请求数：例如 5，表示在统计时长内至少需要 5 个请求才触发熔断。
+     - 熔断时长：例如 5s，表示熔断持续 5 秒，之后进入半开状态。
+   - 示例：
+     - 设置异常比例阈值为 0.5，统计时长为 10s，最小请求数为 5，熔断时长为 5s。
+     - 如果最近 10 秒内有 5 个请求，且其中 3 个请求抛出异常（异常比例为 60%），则触发熔断。
+3. 异常数
+   - 定义：当资源的异常数（即请求抛出异常的数量）超过设定的阈值时，触发熔断。
+   - 特点：
+     - 基于异常数：关注请求是否抛出异常。
+     - 适合异常敏感场景：用于保护系统免受异常请求的影响。
+   - 参数：
+     - 异常数阈值：例如 3，表示异常数超过 3 时触发熔断。
+     - 统计时长：例如 10s，表示统计最近 10 秒内的请求。
+     - 熔断时长：例如 5s，表示熔断持续 5 秒，之后进入半开状态。
+   - 示例：
+     - 设置异常数阈值为 3，统计时长为 10s，熔断时长为 5s。
+     - 如果最近 10 秒内有 3 个请求抛出异常，则触发熔断。
+
+#### 热点规则
+
+​	热点规则的核心思想是：**针对某些特定的参数值或参数组合，单独设置流量限制**，而不是对整个资源进行统一的限制。
+
+1. **资源名：**需要被保护的资源，例如某个接口或方法。
+2. **参数索引：**指定需要监控的参数位置（从 0 开始）
+   - 如果接口方法为 `getUserInfo(Long userId, String ip)`，则 `userId` 的参数索引为 0，`ip` 的参数索引为 1。
+3. **单机阈值：**针对指定参数值的流量限制（QPS ）。
+4. **统计窗口时长：**统计流量的时间窗口，单位为秒。
+5. **参数例外项**
+   - **参数类型**：参数的数据类型
+   - **参数值**：指定例外情况参数的具体参数值
+   - **限流阈值：**针对指定参数值的流量限制（QPS）
+
+下单场景：
+
+- 接口
+
+  - sec-order?customerId=xxx&productId=xxxx
+
+  - ```java
+      @GetMapping("/sec-order")
+      @SentinelResource(value = "secondOrder-sentinel", fallback = "CreateSecondOrderFallback")
+      public Order CreateSecondOrder(@RequestParam int customerId, @RequestParam int productId) {
+        // ......
+      }
+    
+      public Order CreateSecondOrderFallback(int customerId, int productId, Throwable e) {
+        // ......
+      }
+    ```
+
+- 秒杀订单，每个用户的QPS不能超过1。
+  - 参数索引：0
+  - 单机阈值：1
+  - 统计窗口时长：1
+- customerId为666的用户是VIP用户，不限制QPS。
+  - 参数索引：0
+  - 单机阈值：1
+  - 统计窗口时长：1
+  - 参数例外项：
+    - 参数类型：int
+    - 参数值：666
+    - 限流阈值：1000
+- productId为888的商品已经下架，不允许访问。
+  - 参数索引：1
+  - 单机阈值：1000
+  - 统计窗口时长：1
+  - 参数例外项：
+    - 参数类型：int
+    - 参数值：888
+    - 限流阈值：0
+

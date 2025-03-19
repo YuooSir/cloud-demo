@@ -11,6 +11,12 @@ spring:
       config:
         import-check:
           enabled: false
+    sentinel:
+      transport:
+        # sentinel 控制台
+        dashboard: localhost:8080
+      # 开启提前加载
+      eager: true
 logging:
   level:
     root: info
