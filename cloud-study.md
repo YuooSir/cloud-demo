@@ -791,7 +791,7 @@ public class OrderServiceImpl implements OrderService {
       public Order CreateSecondOrder(@RequestParam int customerId, @RequestParam int productId) {
         // ......
       }
-    
+      
       public Order CreateSecondOrderFallback(int customerId, int productId, Throwable e) {
         // ......
       }
@@ -817,4 +817,280 @@ public class OrderServiceImpl implements OrderService {
     - 参数类型：int
     - 参数值：888
     - 限流阈值：0
+
+## Gateway
+
+1. 引入依赖
+
+   ```xml
+   <dependency>
+     <groupId>com.alibaba.cloud</groupId>
+     <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+   </dependency>
+   <dependency>
+     <groupId>org.springframework.cloud</groupId>
+     <artifactId>spring-cloud-starter-gateway</artifactId>
+   </dependency>
+   ```
+
+2. 书写启动类
+
+   ```java
+   @SpringBootApplication
+   @EnableDiscoveryClient
+   public class GatewayApplication {
+   
+     public static void main(String[] args) {
+       SpringApplication.run(GatewayApplication.class, args);
+     }
+   }
+   ```
+
+   
+
+3. 修改application.yml文件
+
+   ```yml
+   server:
+     port: 80
+   
+   spring:
+     application:
+       name: gateway
+     cloud:
+       nacos:
+         server-addr: localhost:8848
+       gateway:
+         routes:
+           - id: product-service
+             uri: lb://product-service
+             predicates:
+               - Path=/api/product/**
+             filters:
+               # 移除路径的前两个前缀
+               - StripPrefix=2
+           - id: order-service
+             uri: lb://order-service
+             predicates:
+               - name: Path
+                 args:
+                   - patterns: /api/order/**
+                   # 是否匹配尾部斜杠
+                   - matchTrailingSlash: true
+             filters:
+               # 移除路径的前两个前缀
+               - StripPrefix=2
+   ```
+   
+
+### 自定义断言
+
+1. 命名必须为**xxxRoutePredicateFactory**
+
+   ```java
+   @Component
+   public class UserRoutePredicateFactory extends AbstractRoutePredicateFactory<UserRoutePredicateFactory.Config> {
+   
+     public UserRoutePredicateFactory() {
+       super(UserRoutePredicateFactory.Config.class);
+     }
+   
+     @Override
+     public List<String> shortcutFieldOrder() {
+       return Arrays.asList("param", "value");
+     }
+   
+     // 自定义验证逻辑
+     @Override
+     public Predicate<ServerWebExchange> apply(Config config) {
+       return serverWebExchange -> {
+         ServerHttpRequest request = serverWebExchange.getRequest();
+         String first = request.getQueryParams().getFirst(config.param);
+         return StringUtils.hasText(first) && first.equals(config.value);
+       };
+     }
+   
+   
+     @Validated
+     public static class Config {
+   
+       @NotEmpty
+       private String param;
+   
+       @NotEmpty
+       private String value;
+   
+       //get set
+   
+     }
+   
+   }
+   ```
+
+2. 在application.yml文件中使用的时候只需要输入 xxx的部分
+
+   ```yml
+   spring:
+     cloud:
+       nacos:
+         server-addr: localhost:8848
+       gateway:
+         routes:
+           - id: baidu-service
+             uri: https://www.baidu.com
+             predicates:
+               - name: User
+                 args:
+                   param: name
+                   value: silence
+   
+   ```
+
+### 过滤器
+
+| 名                               | 参数（个数/类型） | 作用                                              |
+| -------------------------------- | ----------------- | ------------------------------------------------- |
+| AddRequestHeader                 | 2/string          | 添加请求头                                        |
+| AddRequestHeadersIfNotPresent    | 1/List、string    | 如果没有则添加请求头，key:value方式               |
+| AddRequestParameter              | 2/string、string  | 添加请求参数                                      |
+| AddResponseHeader                | 2/string、string  | 添加响应头                                        |
+| CircuitBreaker                   | 1/string          | 仅支持forward:/inCaseOfFailureUseThis方式进行熔断 |
+| CacheRequestBody                 | 1/string          | 缓存请求体                                        |
+| DedupeResponseHeader             | 1/string          | 移除重复响应头，多个用空格分割                    |
+| FallbackHeaders                  | 1/string          | 设置Fallback头                                    |
+| JsonToGrpc                       |                   | 请求体Json转为gRPC                                |
+| LocalResponseCache               | 2/string          | 响应数据本地缓存                                  |
+| MapRequestHeader                 | 2/string          | 把某个请求头名字变为另一个名字                    |
+| ModifyRequestBody                | 仅 Java 代码方式  | 修改请求体                                        |
+| ModifyResponseBody               | 仅 Java 代码方式  | 修改响应体                                        |
+| PrefixPath                       | 1/string          | 自动添加请求前缀路径                              |
+| PreserveHostHeader               | 0                 | 保护Host头                                        |
+| RedirectTo                       | 3/string          | 重定向到指定位置                                  |
+| RemoveJsonAttributesResponseBody | 1/string          | 移除响应体中的某些Json字段，多个用,分割           |
+| RemoveRequestHeader              | 1/string          | 移除请求头                                        |
+| RemoveRequestParameter           | 1/string          | 移除请求参数                                      |
+| RemoveResponseHeader             | 1/string          | 移除响应头                                        |
+| RequestHeaderSize                | 2/string          | 设置请求大小，超出则响应431状态码                 |
+| RequestRateLimiter               | 1/string          | 请求限流                                          |
+| RewriteLocationResponseHeader    | 4/string          | 重写Location响应头                                |
+| RewritePath                      | 2/string          | 路径重写                                          |
+| RewriteRequestParameter          | 2/string          | 请求参数重写                                      |
+| RewriteResponseHeader            | 3/string          | 响应头重写                                        |
+| SaveSession                      | 0                 | session保存，配合spring-session框架               |
+| SecureHeaders                    | 0                 | 安全头设置                                        |
+| SetPath                          | 1/string          | 路径修改                                          |
+| SetRequestHeader                 | 2/string          | 请求头修改                                        |
+| SetResponseHeader                | 2/string          | 响应头修改                                        |
+| SetStatus                        | 1/int             | 设置响应状态码                                    |
+| StripPrefix                      | 1/int             | 路径层级拆除                                      |
+| Retry                            | 7/string          | 请求重试设置                                      |
+| RequestSize                      | 1/string          | 请求大小限定                                      |
+| SetRequestHostHeader             | 1/string          | 设置Host请求头                                    |
+| TokenRelay                       | 1/string          | OAuth2的token转发                                 |
+
+#### 全局过滤器
+
+```java
+/**
+ * 全局过滤器，响应时间过滤器
+ */
+@Component
+@Slf4j
+public class ResponseTimeGlobalFilter implements GlobalFilter, Ordered {
+
+  /**
+   * 过滤器处理逻辑
+   */
+  @Override
+  public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+    String requestUri = exchange.getRequest().getURI().toString();
+    long start = System.currentTimeMillis();
+    log.info("==========请求「{}」开始==========", requestUri);
+
+    return chain.filter(exchange).doFinally(signalType -> {
+      long end = System.currentTimeMillis();
+      log.info("==========请求「{}」结束，耗时{}s==========", requestUri, (end - start) * 1.0 / 1000);
+    });
+  }
+
+  /**
+   * 设置过滤器优先级，越小越靠前
+   */
+  @Override
+  public int getOrder() {
+    return 0;
+  }
+}
+```
+
+#### 自定义过滤器工厂
+
+1. 命名规则：**xxxxGatewayFilterFactory**
+
+   ```java
+   @Component
+   public class AddCustomTokenGatewayFilterFactory extends AbstractNameValueGatewayFilterFactory {
+   
+     @Override
+     public GatewayFilter apply(NameValueConfig config) {
+       return (exchange, chain) -> chain.filter(exchange).then(Mono.fromRunnable(() -> {
+         ServerHttpResponse response = exchange.getResponse();
+         HttpHeaders headers = response.getHeaders();
+         String value = config.getValue();
+         String token = "";
+         if ("uuid".equals(value)) {
+           token = UUID.randomUUID().toString();
+         } else if ("jwt".equals(value)) {
+           token = "假装是个jwt";
+         } else {
+           token = String.valueOf(System.currentTimeMillis());
+         }
+         headers.add(config.getName(), token);
+       }));
+     }
+   }
+   ```
+
+2. 在application.yml文件中使用
+
+   ```yml
+   server:
+     port: 80
+   
+   spring:
+     application:
+       name: gateway
+     cloud:
+       nacos:
+         server-addr: localhost:8848
+       gateway:
+         routes:
+           - id: order-service
+             uri: lb://order-service
+             predicates:
+               - name: Path
+                 args:
+                   - patterns: /api/order/**
+             filters:
+               - AddCustomToken=customToken,uuid
+   ```
+
+#### 全局跨域
+
+```yml
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      server-addr: localhost:8848
+    gateway:
+      # 跨域配置
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: "*"
+            allowed-headers: "*"
+            allowed-methods: "*"
+```
 

@@ -1,0 +1,57 @@
+server:
+  port: 80
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      server-addr: localhost:8848
+    gateway:
+      # 跨域配置
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: "*"
+            allowed-headers: "*"
+            allowed-methods: "*"
+      routes:
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/api/product/**
+          filters:
+            - RewritePath=/api/product(?<segment>.*), /$\{segment}
+
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - name: Path
+              args:
+                - patterns: /api/order/**
+                # 是否匹配尾部斜杠
+                - matchTrailingSlash: true
+          filters:
+            - RewritePath=/api/order(?<segment>.*), /$\{segment}
+            - AddCustomToken=customToken,uuid
+        - id: baidu-service
+          uri: https://www.baidu.com
+          predicates:
+            - name: Path
+              args:
+                patterns: /s
+            - name: Query
+              args:
+                param: ie
+                regexp: UTF-8
+            - name: Query
+              args:
+                param: wd
+                regexp: haha
+            - name: User
+              args:
+                param: name
+                value: silence
+      #  默认过滤器
+      default-filters:
+        - AddResponseHeader=X-Response-Time,123456
