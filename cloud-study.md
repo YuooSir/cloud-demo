@@ -225,7 +225,7 @@
 
 使用**组（group）**区分不同的微服务
 
-使用**配置文件（Data id）**区分不同的配置
+使用**配置文件（Data id）**区分不同的配置 
 
 ```yml
 spring:
@@ -274,3 +274,61 @@ spring:
       on-profile: prod
 ```
 
+
+
+## OpenFeign
+
+### 远程调用
+
+1. 引入openFeign依赖
+
+   ```xml
+   <dependency>
+     <groupId>org.springframework.cloud</groupId>
+     <artifactId>spring-cloud-starter-openfeign</artifactId>
+   </dependency>
+   ```
+
+2. 在启动类加入注解 
+
+   ```java
+   @EnableFeignClients
+   ```
+
+3. 创建FeignClient
+
+   ```java
+   @FeignClient(value = "product-service")
+   public interface ProductFeignClient {
+   
+     // 此时GetMapping表示发起GET请求
+     @GetMapping("/product/{productId}")
+     Product getProduct(@PathVariable int productId);
+   
+   }
+   ```
+
+4. 通过FeignClient调用其他服务
+
+   ```java
+   @Service
+   public class OrderServiceImpl implements OrderService {
+   
+     @Autowired
+     ProductFeignClient productFeignClient;
+   
+     @Override
+     public Order createOrder(int customerId, int productId, int quantity) {
+   
+       // ...
+       Product product = productFeignClient.getProduct(productId);
+       // ...
+   
+       return order;
+     }
+   }
+   ```
+
+   
+
+5. 
