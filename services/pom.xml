@@ -14,6 +14,11 @@
   <modules>
     <module>service-order</module>
     <module>service-product</module>
+    <module>seata-account</module>
+    <module>seata-business</module>
+    <module>seata-storage</module>
+    <module>seata-order</module>
+    <module>seata-storage</module>
   </modules>
 
   <dependencies>

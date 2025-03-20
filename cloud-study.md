@@ -1094,3 +1094,54 @@ spring:
             allowed-methods: "*"
 ```
 
+
+
+
+
+## Seata
+
+1. 下载[Seata](https://seata.apache.org/zh-cn/download/seata-server)，选择和当前项目中的版本一致的。
+
+2. 启动Seata
+
+   ```cmd
+   seata-server.bat
+   ```
+
+3. 引入依赖
+
+   ```xml
+   <!--Seata分布式事务-->
+   <dependency>
+     <groupId>com.alibaba.cloud</groupId>
+     <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+   </dependency>
+   ```
+
+4. 在引入Seata依赖的服务中加入file.conf文件
+
+   ```conf
+   service {
+     #transaction service group mapping
+     vgroupMapping.default_tx_group = "default"
+     #only support when registry.type=file, please don't set multiple addresses
+     default.grouplist = "127.0.0.1:8091"
+     #degrade, current not support
+     enableDegrade = false
+     #disable seata
+     disableGlobalTransaction = false
+   }
+   
+   ```
+
+5. 在最大的方法入口处加入注解
+
+   ```java
+   @GlobalTransactional
+   ```
+
+4. 其他的分支事务需要确保加上了事务注解，以及启动类开启了事务
+
+### 原理
+
+![二阶提交协议原理](assets/二阶提交协议原理.png)
